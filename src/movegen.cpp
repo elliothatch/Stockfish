@@ -66,32 +66,24 @@ namespace {
 
 
   template<GenType Type, Square Delta>
-  inline ExtMove* generate_promotions(ExtMove* moveList, Bitboard pawnsOn7,
-                                      Bitboard target, const CheckInfo* ci) {
+  inline ExtMove* make_promotions(ExtMove* moveList, Square to, const CheckInfo* ci) {
 
-    Bitboard b = shift_bb<Delta>(pawnsOn7) & target;
+    if (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS)
+        (moveList++)->move = make<PROMOTION>(to - Delta, to, QUEEN);
 
-    while (b)
+    if (Type == QUIETS || Type == EVASIONS || Type == NON_EVASIONS)
     {
-        Square to = pop_lsb(&b);
-
-        if (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS)
-            (moveList++)->move = make<PROMOTION>(to - Delta, to, QUEEN);
-
-        if (Type == QUIETS || Type == EVASIONS || Type == NON_EVASIONS)
-        {
-            (moveList++)->move = make<PROMOTION>(to - Delta, to, ROOK);
-            (moveList++)->move = make<PROMOTION>(to - Delta, to, BISHOP);
-            (moveList++)->move = make<PROMOTION>(to - Delta, to, KNIGHT);
-        }
-
-        // Knight promotion is the only promotion that can give a direct check
-        // that's not already included in the queen promotion.
-        if (Type == QUIET_CHECKS && (StepAttacksBB[W_KNIGHT][to] & ci->ksq))
-            (moveList++)->move = make<PROMOTION>(to - Delta, to, KNIGHT);
-        else
-            (void)ci; // Silence a warning under MSVC
+        (moveList++)->move = make<PROMOTION>(to - Delta, to, ROOK);
+        (moveList++)->move = make<PROMOTION>(to - Delta, to, BISHOP);
+        (moveList++)->move = make<PROMOTION>(to - Delta, to, KNIGHT);
     }
+
+    // Knight promotion is the only promotion that can give a direct check
+    // that's not already included in the queen promotion.
+    if (Type == QUIET_CHECKS && (StepAttacksBB[W_KNIGHT][to] & ci->ksq))
+        (moveList++)->move = make<PROMOTION>(to - Delta, to, KNIGHT);
+    else
+        (void)ci; // Silence a warning under MSVC
 
     return moveList;
   }
@@ -111,7 +103,7 @@ namespace {
     const Square   Right    = (Us == WHITE ? DELTA_NE : DELTA_SW);
     const Square   Left     = (Us == WHITE ? DELTA_NW : DELTA_SE);
 
-    Bitboard b1, b2, dc1, dc2, emptySquares;
+    Bitboard emptySquares;
 
     Bitboard pawnsOn7    = pos.pieces(Us, PAWN) &  TRank7BB;
     Bitboard pawnsNotOn7 = pos.pieces(Us, PAWN) & ~TRank7BB;
@@ -124,8 +116,8 @@ namespace {
     {
         emptySquares = (Type == QUIETS || Type == QUIET_CHECKS ? target : ~pos.pieces());
 
-        b1 = shift_bb<Up>(pawnsNotOn7)   & emptySquares;
-        b2 = shift_bb<Up>(b1 & TRank3BB) & emptySquares;
+        Bitboard b1 = shift_bb<Up>(pawnsNotOn7)   & emptySquares;
+        Bitboard b2 = shift_bb<Up>(b1 & TRank3BB) & emptySquares;
 
         if (Type == EVASIONS) // Consider only blocking squares
         {
@@ -144,8 +136,8 @@ namespace {
             // promotion has been already generated amongst the captures.
             if (pawnsNotOn7 & ci->dcCandidates)
             {
-                dc1 = shift_bb<Up>(pawnsNotOn7 & ci->dcCandidates) & emptySquares & ~file_bb(ci->ksq);
-                dc2 = shift_bb<Up>(dc1 & TRank3BB) & emptySquares;
+                Bitboard dc1 = shift_bb<Up>(pawnsNotOn7 & ci->dcCandidates) & emptySquares & ~file_bb(ci->ksq);
+                Bitboard dc2 = shift_bb<Up>(dc1 & TRank3BB) & emptySquares;
 
                 b1 |= dc1;
                 b2 |= dc2;
@@ -174,16 +166,25 @@ namespace {
         if (Type == EVASIONS)
             emptySquares &= target;
 
-        moveList = generate_promotions<Type, Right>(moveList, pawnsOn7, enemies, ci);
-        moveList = generate_promotions<Type, Left >(moveList, pawnsOn7, enemies, ci);
-        moveList = generate_promotions<Type, Up>(moveList, pawnsOn7, emptySquares, ci);
+        Bitboard b1 = shift_bb<Right>(pawnsOn7) & enemies;
+        Bitboard b2 = shift_bb<Left >(pawnsOn7) & enemies;
+        Bitboard b3 = shift_bb<Up   >(pawnsOn7) & emptySquares;
+
+        while (b1)
+            moveList = make_promotions<Type, Right>(moveList, pop_lsb(&b1), ci);
+
+        while (b2)
+            moveList = make_promotions<Type, Left >(moveList, pop_lsb(&b2), ci);
+
+        while (b3)
+            moveList = make_promotions<Type, Up   >(moveList, pop_lsb(&b3), ci);
     }
 
     // Standard and en-passant captures
     if (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS)
     {
-        b1 = shift_bb<Right>(pawnsNotOn7) & enemies;
-        b2 = shift_bb<Left >(pawnsNotOn7) & enemies;
+        Bitboard b1 = shift_bb<Right>(pawnsNotOn7) & enemies;
+        Bitboard b2 = shift_bb<Left >(pawnsNotOn7) & enemies;
 
         while (b1)
         {
@@ -289,7 +290,6 @@ namespace {
 
     return moveList;
   }
-
 
 } // namespace
 
